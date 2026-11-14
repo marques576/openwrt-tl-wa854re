@@ -1,8 +1,11 @@
 # OpenWrt for the TP-Link TL-WA854RE v1
 
 Unofficial, self-built OpenWrt firmware for the **TP-Link TL-WA854RE v1** wall-plug
-range extender, plus the steps to install and configure it as a repeater /
-NAT'd access point.
+range extender, plus the steps to install it.
+
+![TP-Link TL-WA854RE](docs/device-tl-wa854re.png)
+
+*Product image (c) TP-Link, used only to identify the hardware.*
 
 The device is **not** in OpenWrt's Table of Hardware, and the last OpenWrt release
 that can build a working image for it is **18.06.9**. This repo contains a patched
@@ -131,84 +134,15 @@ WA854RE v1 and not a different revision.
 
 ### First boot
 
-- The repeater comes up as an **open** network named **`OpenWrt`** at **`192.168.1.1`**
+- The device comes up as an **open** network named **`OpenWrt`** at **`192.168.1.1`**
 - Join it, open `http://192.168.1.1` (LuCI) → **System → Administration** →
   **set a root password** (this also enables SSH — dropbear will not start until a
   password exists)
 - SSH: `ssh root@192.168.1.1` (add `-o HostKeyAlgorithms=+ssh-rsa` on modern OpenSSH,
   because 18.06's dropbear only offers an `ssh-rsa` host key)
 
-> Why `192.168.1.1` matters: if your main router is also `192.168.1.1` (very common),
-> change the LAN subnet — see step 2 below — or the two subnets will collide.
-
-### Configure as a repeater / NAT'd AP (LuCI)
-
-This makes the device connect to your existing Wi-Fi and re-broadcast it with its own
-SSID, NAT'ing to the uplink. Replace the `<...>` placeholders.
-
-**1. Join the upstream network** — *Network → Wireless*:
-
-1. Click **Scan** next to `radio0`
-2. **Join Network** on your network
-3. Fill in:
-   - **WPA passphrase**: `<YOUR_WIFI_KEY>`
-   - **Create / assign firewall-zone**: **`wan`** ← this is what enables NAT
-   - **Replace wireless configuration**: **leave UNCHECKED**
-4. **Submit** → **Save & Apply**
-
-> ⚠️ Ticking *"Replace wireless configuration"* deletes your `OpenWrt` AP. The device
-> then becomes client-only and you lose access. If you do it anyway: see [Recovery](#recovery).
-
-**2. Move the LAN off the upstream subnet** — *Network → Interfaces → LAN → Edit*:
-
-- **IPv4 address**: `192.168.2.1`
-- **Save & Apply**, then rejoin Wi-Fi (you get a `192.168.2.x` lease)
-
-Do this whenever the upstream router uses `192.168.1.0/24`.
-
-**3. Name and secure your AP** — *Network → Wireless → OpenWrt → Edit*:
-
-- **ESSID**: `<AP_NAME>`
-- **Wireless Security**: WPA2-PSK, key `<AP_KEY>`
-- **Save & Apply**
-
-**4. Leave the radio channel on `auto`.**
-It is a single radio doing AP + client at once. If you pin a channel the upstream AP
-is not using, the client cannot associate and the AP will not start.
-
-**Verify:** *Network → Interfaces* should show your `wwan` with a DHCP lease from the
-upstream router, and `LAN` on `192.168.2.1`.
-
-### Same result from the shell
-
-```sh
-# uplink (client) interface on the wan firewall zone -> NAT
-uci set wireless.sta=wifi-iface
-uci set wireless.sta.device=radio0
-uci set wireless.sta.mode=sta
-uci set wireless.sta.network=wwan
-uci set wireless.sta.ssid='<YOUR_SSID>'
-uci set wireless.sta.encryption=psk2
-uci set wireless.sta.key='<YOUR_WIFI_KEY>'
-uci set network.wwan=interface
-uci set network.wwan.proto=dhcp
-uci add_list firewall.@zone[1].network=wwan
-
-# AP + LAN
-uci set wireless.default_radio0.ssid='<AP_NAME>'
-uci set wireless.default_radio0.encryption=psk2
-uci set wireless.default_radio0.key='<AP_KEY>'
-uci set network.lan.ipaddr='192.168.2.1'
-
-uci commit
-reboot
-```
-
-Expect roughly **half** the throughput of a direct connection: one radio has to
-receive and retransmit on the same channel.
-
-Prefer a real L2 bridge over NAT? That needs `relayd`, which does **not** fit in the
-remaining flash — it would require a custom image build.
+> The default LAN address is `192.168.1.1`. If your existing router already uses that
+> address, change it under *Network → Interfaces* to avoid a subnet conflict.
 
 ---
 
@@ -284,11 +218,8 @@ fe3a478338fb3105aed8f1fc6f8a7485f1bdedbfb2cb4f6f90b3cce4069b338c  openwrt-imageb
 |---|---|
 | Stock UI: `Error code 18005` | HWID mismatch — you need this repo's image, not the official `tl-wa850re-v1` one |
 | Flashed, then no `OpenWrt` network appears | Radio disabled by default — make sure you used this image, then RECOVERY |
-| AP vanishes after configuring the uplink | Client could not associate (wrong key, or a pinned channel). Hold RESET 10 s |
 | `ssh` fails: *no matching host key type* | `-o HostKeyAlgorithms=+ssh-rsa` |
 | `ssh` connection refused on port 22 | No root password set — set one in LuCI, dropbear starts afterwards |
-| LuCI unreachable but ping works | You are probably on the uplink subnet; the box is on `192.168.2.1` |
-| Can't reach other devices on the upstream LAN | Expected with NAT. A L2 bridge would need `relayd`, which doesn't fit |
 
 ---
 
@@ -298,7 +229,6 @@ fe3a478338fb3105aed8f1fc6f8a7485f1bdedbfb2cb4f6f90b3cce4069b338c  openwrt-imageb
   installing packages. RAM is the tighter constraint; keep services minimal.
 - **18.06.9 is EOL.** No security updates. Home/lab use only.
 - **No Ethernet port**, so Wi-Fi is both the service and the only management path.
-- **Single radio**: AP + client share one channel, so throughput roughly halves.
 - The stock firmware on these units is sometimes cross-flashed from a TL-WA850RE, so
   the hardware-version string reported in the stock UI can be misleading. Trust the
   label, and note that `0x08540001` is the identifier the bootloader checks.
